@@ -25,10 +25,28 @@ Hardware buttons might map to combinations of these bits.
 - Datasheet HCS200: http://ww1.microchip.com/downloads/en/devicedoc/40138c.pdf
 - Datasheet HCS300: http://ww1.microchip.com/downloads/en/devicedoc/21137g.pdf
 
-The warm-up of 12 short pulses is followed by a long 4400 us gap.
+Pulse timing is based on the TE (basic pulse element) timing parameter.  All data code words are 3x TE long.  For a logic 0 / long pulse, the first 2x TE are high and the last TE period is low.  For a logic 1 / short pulse, the first TE period is high and the last 2x TE are low.
+
+On the HCS200 and HCS300, TE is nominally 400us, but lengthens with both temperatures further from 20^C as well as with lower voltages, shortening with higher voltages.  TE on the HCS200 can vary from -30% to +55%.  The HCS300 is worse with a variance of -35% to +65%.
+
+The preamble is 23x TE at 50% duty cycle and is followed by a long 10x TE "header" gap.  These are followed by 66 code words (198x TE).  Finally, there is a 39x TE guard time between packets.
 There are two packets with a 17500 us gap.
 
-rtl_433 -R 0 -X 'n=hcs200,m=OOK_PWM,s=370,l=772,r=9000,g=1500,t=152'
+gap must be shorter than 10x TE at the shortest value: 2600us
+gap must be longer than 2x TE at the longest value: 1320us
+
+reset must be longer that 10x TE at the longest value: 6600us
+reset must be shorter that 39x TE at the shortest value: 10140us
+
+unfortunately tolerance must be specified in us and that affects both short and long pulses.  We need a range of 800us for a long pulse (920+/-400) but only 400us (460+/-200) for a short pulse.  Yet this causes an overlap, specially since we would be forced to set tolerance to 400 even for the short pulse.
+if no tolerance is specified, the average of short and long is used as a threshold between the two.  If we can set that to 590, we'll get the best range as it splits the difference.
+
+rtl_433 -R 0 -X 'n=hcs200,m=OOK_PWM,s=393,l=787,r=9000,g=1500'
+
+Genie / Overhead Door Intellicode devices appear to use 2x baud, so their TE is only 200us instead of 400us.
+
+rtl_433 -R 0 -X 'n=intellicode,m=OOK_PWM,s=197,l=393,r=4500,g=750'
+
 */
 
 #include "decoder.h"
@@ -100,11 +118,11 @@ static char const *const output_fields[] = {
 r_device const hcs200 = {
         .name        = "Microchip HCS200/HCS300 KeeLoq Hopping Encoder based remotes",
         .modulation  = OOK_PULSE_PWM,
-        .short_width = 370,
-        .long_width  = 772,
+        .short_width = 393,
+        .long_width  = 787,
         .gap_limit   = 1500,
         .reset_limit = 9000,
-        .tolerance   = 152, // us
+        .tolerance   = 0, // split difference of short and long
         .decode_fn   = &hcs200_callback,
         .fields      = output_fields,
 };
@@ -112,11 +130,23 @@ r_device const hcs200 = {
 r_device const hcs200_fsk = {
         .name        = "Microchip HCS200/HCS300 KeeLoq Hopping Encoder based remotes (FSK)",
         .modulation  = FSK_PULSE_PWM,
-        .short_width = 370,
-        .long_width  = 772,
+        .short_width = 393,
+        .long_width  = 787,
         .gap_limit   = 1500,
         .reset_limit = 9000,
-        .tolerance   = 152, // us
+        .tolerance   = 0, // split difference of short and long
+        .decode_fn   = &hcs200_callback,
+        .fields      = output_fields,
+};
+
+r_device const intellicode = {
+        .name        = "Genie / Overhead Door Intellicode KeeLoq Hopping Encoder based remotes",
+        .modulation  = OOK_PULSE_PWM,
+        .short_width = 197,
+        .long_width  = 393,
+        .gap_limit   = 750,
+        .reset_limit = 4500,
+        .tolerance   = 0, // split difference of short and long
         .decode_fn   = &hcs200_callback,
         .fields      = output_fields,
 };
